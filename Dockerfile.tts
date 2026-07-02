@@ -46,11 +46,12 @@ COPY . .
 ENV PYTHONPATH="/app:/app/third_party/Matcha-TTS"
 
 # Install Python deps
-RUN pip install --no-cache-dir \
-    -r requirements.txt \
-    huggingface_hub \
-    vllm \
-    librosa
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && pip install --no-cache-dir \
+        -r requirements.txt \
+        huggingface_hub \
+        vllm \
+        librosa
 
 # Weights are downloaded at runtime into this volume
 VOLUME ["/app/pretrained_models"]
