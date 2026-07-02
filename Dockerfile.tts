@@ -45,10 +45,13 @@ COPY . .
 
 ENV PYTHONPATH="/app:/app/third_party/Matcha-TTS"
 
-# Install Python deps; pyworld needs numpy pre-installed before its own build
-RUN pip install --no-cache-dir numpy==1.26.4 \
+# Install Python deps
+# - skip tensorrt: we use vLLM (load_trt=False), and tensorrt's wheel_stub is unavailable
+# - pre-install numpy: pyworld's setup.py imports it before pip can satisfy the dep
+RUN grep -v 'tensorrt' requirements.txt > /tmp/requirements_novllm.txt \
+    && pip install --no-cache-dir numpy==1.26.4 \
     && pip install --no-cache-dir --no-build-isolation \
-        -r requirements.txt \
+        -r /tmp/requirements_novllm.txt \
         huggingface_hub \
         vllm \
         librosa
