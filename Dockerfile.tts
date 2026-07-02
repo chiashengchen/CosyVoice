@@ -1,0 +1,66 @@
+# CosyVoice2 TTS streaming server
+# Serves POST /tts/stream → raw 16-bit PCM mono (visualllm pipeline contract)
+#
+# Weights are NOT baked in — downloaded from HuggingFace at first startup.
+# Mount a volume at /app/pretrained_models to cache across restarts:
+#   -v cosyvoice-weights:/app/pretrained_models
+#
+# Build:
+#   docker build -f Dockerfile.tts -t cosyvoice-tts .
+#
+# Run (GPU required):
+#   docker run --gpus all -p 8001:8001 \
+#     -v cosyvoice-weights:/app/pretrained_models \
+#     cosyvoice-tts
+
+FROM nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV LANG=C.UTF-8
+
+# System deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git git-lfs curl wget ffmpeg sox libsox-dev build-essential \
+    && git lfs install \
+    && rm -rf /var/lib/apt/lists/*
+
+# Miniforge (conda)
+RUN wget -q https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh -O /tmp/miniforge.sh \
+    && bash /tmp/miniforge.sh -b -p /opt/conda \
+    && rm /tmp/miniforge.sh
+ENV PATH=/opt/conda/bin:$PATH
+
+# Conda env: python 3.10 + pynini (requires conda-forge)
+RUN conda create -y -n cosyvoice python=3.10 \
+    && conda install -y -n cosyvoice -c conda-forge pynini==2.1.5 \
+    && conda clean -afy
+ENV PATH=/opt/conda/envs/cosyvoice/bin:$PATH
+ENV CONDA_DEFAULT_ENV=cosyvoice
+
+WORKDIR /app
+
+# Copy repo source (weights excluded via .dockerignore)
+COPY . .
+
+ENV PYTHONPATH="/app:/app/third_party/Matcha-TTS"
+
+# Install Python deps
+RUN pip install --no-cache-dir \
+    -r requirements.txt \
+    huggingface_hub \
+    vllm \
+    librosa
+
+# Weights are downloaded at runtime into this volume
+VOLUME ["/app/pretrained_models"]
+
+EXPOSE 8001
+
+ENV COSYVOICE_MODEL_DIR=/app/pretrained_models/CosyVoice2-0.5B
+ENV HF_MODEL_ID=FunAudioLLM/CosyVoice2-0.5B
+ENV USE_VLLM=1
+ENV COSYVOICE_VLLM_GPU_UTIL=0.5
+ENV PORT=8001
+
+CMD ["python", "tts_stream_server.py"]
