@@ -45,8 +45,9 @@ COPY . .
 
 ENV PYTHONPATH="/app:/app/third_party/Matcha-TTS"
 
-# Install Python deps; --no-build-isolation uses cosyvoice env's setuptools (has pkg_resources)
-RUN pip install --no-cache-dir --no-build-isolation \
+# Install Python deps; pyworld needs numpy pre-installed before its own build
+RUN pip install --no-cache-dir numpy==1.26.4 \
+    && pip install --no-cache-dir --no-build-isolation \
         -r requirements.txt \
         huggingface_hub \
         vllm \
