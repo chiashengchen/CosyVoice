@@ -78,10 +78,8 @@ def _load_model() -> None:
     cosyvoice = AutoModel(
         model_dir=MODEL_DIR,
         load_vllm=USE_VLLM,
-        load_jit=False,
         load_trt=False,
         fp16=True,
-        vllm_gpu_memory_utilization=GPU_UTIL,
     )
 
     logger.info(f"Loading voice reference: {VOICE_REF}")
