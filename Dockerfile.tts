@@ -25,18 +25,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && git lfs install \
     && rm -rf /var/lib/apt/lists/*
 
-# Miniforge (conda)
+# Miniforge: install pynini (conda-forge only) + python 3.10 in base env
 RUN wget -q https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh -O /tmp/miniforge.sh \
     && bash /tmp/miniforge.sh -b -p /opt/conda \
     && rm /tmp/miniforge.sh
 ENV PATH=/opt/conda/bin:$PATH
 
-# Conda env: python 3.10 + pynini (requires conda-forge)
-RUN conda create -y -n cosyvoice python=3.10 \
-    && conda install -y -n cosyvoice -c conda-forge pynini==2.1.5 \
+# Install python 3.10 + pynini into base env; also pin setuptools so pkg_resources stays available
+RUN conda install -y python=3.10 "setuptools<72" pip wheel -c conda-forge \
+    && conda install -y -c conda-forge pynini==2.1.5 \
     && conda clean -afy
-ENV PATH=/opt/conda/envs/cosyvoice/bin:$PATH
-ENV CONDA_DEFAULT_ENV=cosyvoice
 
 WORKDIR /app
 
@@ -45,10 +43,8 @@ COPY . .
 
 ENV PYTHONPATH="/app:/app/third_party/Matcha-TTS"
 
-# Install Python deps
-# --no-build-isolation avoids isolated envs that lack pkg_resources (openai-whisper 20231117 issue)
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
-    && pip install --no-cache-dir --no-build-isolation \
+# Install Python deps; setuptools<72 keeps pkg_resources; --no-build-isolation uses our env
+RUN pip install --no-cache-dir --no-build-isolation \
         -r requirements.txt \
         huggingface_hub \
         vllm \
