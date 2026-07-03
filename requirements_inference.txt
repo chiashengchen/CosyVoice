@@ -1,8 +1,8 @@
 --extra-index-url https://download.pytorch.org/whl/cu121
 
 # Core inference deps for CosyVoice2
-torch==2.4.1
-torchaudio==2.4.1
+torch==2.4.0
+torchaudio==2.4.0
 
 # CosyVoice model loading
 # transformers 4.44.2 is compatible with torch 2.4.x; CosyVoice uses register_fake which needs torch>=2.4
