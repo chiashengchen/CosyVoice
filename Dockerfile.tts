@@ -45,17 +45,17 @@ WORKDIR /app
 #   git submodule update --init third_party/Matcha-TTS
 COPY . .
 
-# Matcha-TTS is a git submodule; init it so cosyvoice.flow.flow_matching can import matcha
-RUN git submodule update --init --recursive third_party/Matcha-TTS
-
 ENV PYTHONPATH="/app:/app/third_party/Matcha-TTS"
 
 # Install Python deps
+# - matcha-tts: installed from the pinned submodule commit (submodule files not in Docker context)
 # - skip tensorrt: wheel_stub build backend unavailable; not needed (load_trt=False)
 # - skip vllm pip package: CosyVoice's load_vllm connects to an external vllm server process,
 #   not this package; USE_VLLM=0 uses standard PyTorch inference instead
 # - pre-install numpy: pyworld's setup.py imports it before pip can satisfy the dep
-RUN grep -vE 'tensorrt|^vllm' requirements.txt > /tmp/requirements_core.txt \
+RUN pip install --no-cache-dir \
+        "matcha-tts @ git+https://github.com/shivammehta25/Matcha-TTS.git@dd9105b34bf2be2230f4aa1e4769fb586a3c824e" \
+    && grep -vE 'tensorrt|^vllm' requirements.txt > /tmp/requirements_core.txt \
     && pip install --no-cache-dir numpy==1.26.4 \
     && pip install --no-cache-dir --no-build-isolation \
         -r /tmp/requirements_core.txt \
