@@ -43,6 +43,9 @@ WORKDIR /app
 # Copy repo source (weights excluded via .dockerignore)
 COPY . .
 
+# Matcha-TTS is a git submodule — init it so cosyvoice.flow.flow_matching can import matcha
+RUN git submodule update --init --recursive third_party/Matcha-TTS
+
 # Matcha-TTS is a git submodule; init it so cosyvoice.flow.flow_matching can import matcha
 RUN git submodule update --init --recursive third_party/Matcha-TTS
 
