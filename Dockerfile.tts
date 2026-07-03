@@ -36,7 +36,9 @@ RUN pip install --no-cache-dir \
 # - setuptools<72 keeps pkg_resources for old-style setup.py packages
 RUN pip install --no-cache-dir "setuptools<72" \
     && pip install --no-cache-dir numpy==1.26.4 pynini==2.1.5 \
-    && pip install --no-cache-dir --no-build-isolation -r requirements_inference.txt
+    && pip install --no-cache-dir --no-build-isolation -r requirements_inference.txt \
+    && pip install --no-cache-dir --no-deps openai-whisper==20231117 \
+       ffmpeg-python tiktoken more-itertools
 
 ENV COSYVOICE_MODEL_DIR=/app/pretrained_models/CosyVoice2-0.5B
 ENV HF_MODEL_ID=FunAudioLLM/CosyVoice2-0.5B

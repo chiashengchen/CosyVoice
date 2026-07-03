@@ -18,7 +18,8 @@ conformer==0.3.2
 x-transformers==2.11.24
 diffusers==0.29.0
 onnxruntime-gpu==1.18.0; sys_platform == 'linux'
-openai-whisper==20231117
+# openai-whisper installed separately with --no-deps to avoid triton version conflict
+# (torch>=2.4 needs triton==3.0.0; whisper's metadata says triton<3, but whisper never imports triton)
 pyworld==0.3.4
 soundfile==0.12.1
 librosa==0.10.2
