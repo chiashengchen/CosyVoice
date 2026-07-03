@@ -41,10 +41,9 @@ ENV CONDA_DEFAULT_ENV=cosyvoice
 WORKDIR /app
 
 # Copy repo source (weights excluded via .dockerignore)
+# NOTE: Matcha-TTS submodule must be initialized on the host before building:
+#   git submodule update --init third_party/Matcha-TTS
 COPY . .
-
-# Matcha-TTS is a git submodule — init it so cosyvoice.flow.flow_matching can import matcha
-RUN git submodule update --init --recursive third_party/Matcha-TTS
 
 # Matcha-TTS is a git submodule; init it so cosyvoice.flow.flow_matching can import matcha
 RUN git submodule update --init --recursive third_party/Matcha-TTS
