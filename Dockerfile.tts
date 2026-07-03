@@ -1,46 +1,11 @@
 # CosyVoice2 TTS streaming server — minimal inference image
 #
-# Multi-stage build:
-#   builder  — compiles C extensions (pyworld, pynini)
-#   runtime  — only inference deps, no build tools / conda / training libs
+# Single-stage build using runtime CUDA base + pip only (no conda, no build tools in final image).
+# pynini 2.1.5 has pre-built manylinux wheels on PyPI — no conda needed.
 #
 # Weights are NOT baked in — downloaded from HuggingFace at first startup.
 # Mount a volume at /app/pretrained_models to cache across restarts.
 
-# ── Stage 1: builder ──────────────────────────────────────────────────────────
-FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04 AS builder
-
-ENV DEBIAN_FRONTEND=noninteractive
-ENV PYTHONUNBUFFERED=1
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.10 python3.10-dev python3-pip python3.10-venv \
-    git curl wget ffmpeg sox libsox-dev build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-# pynini must come from conda-forge (no pip wheel); install just the .so files
-RUN wget -q https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh -O /tmp/miniforge.sh \
-    && bash /tmp/miniforge.sh -b -p /opt/conda \
-    && rm /tmp/miniforge.sh \
-    && /opt/conda/bin/conda install -y python=3.10 "setuptools<72" -c conda-forge \
-    && /opt/conda/bin/conda install -y -c conda-forge pynini==2.1.5 \
-    && /opt/conda/bin/conda clean -afy
-
-ENV PATH=/opt/conda/bin:$PATH
-
-WORKDIR /app
-COPY . .
-
-# Install Matcha-TTS from pinned submodule commit
-RUN pip install --no-cache-dir \
-    "matcha-tts @ git+https://github.com/shivammehta25/Matcha-TTS.git@dd9105b34bf2be2230f4aa1e4769fb586a3c824e"
-
-# Install inference deps; pyworld needs numpy first (imports it in setup.py)
-RUN pip install --no-cache-dir numpy==1.26.4 \
-    && pip install --no-cache-dir --no-build-isolation -r requirements_inference.txt
-
-
-# ── Stage 2: runtime ──────────────────────────────────────────────────────────
 FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -48,19 +13,31 @@ ENV PYTHONUNBUFFERED=1
 ENV LANG=C.UTF-8
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.10 python3-pip ffmpeg sox curl \
+    python3.10 python3.10-dev python3-pip \
+    git ffmpeg sox libsox-dev build-essential curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy conda env (for pynini .so) and pip packages from builder
-COPY --from=builder /opt/conda /opt/conda
-ENV PATH=/opt/conda/bin:$PATH
+# Make python3.10 the default python
+RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1 \
+    && update-alternatives --install /usr/bin/pip pip /usr/bin/pip3 1
 
 WORKDIR /app
-
-# Copy app source
-COPY --from=builder /app /app
+COPY . .
 
 ENV PYTHONPATH="/app:/app/third_party/Matcha-TTS"
+
+# Install Matcha-TTS from pinned submodule commit (provides 'matcha' package)
+RUN pip install --no-cache-dir \
+    "matcha-tts @ git+https://github.com/shivammehta25/Matcha-TTS.git@dd9105b34bf2be2230f4aa1e4769fb586a3c824e"
+
+# Install inference deps
+# - numpy first: pyworld's setup.py imports it during metadata generation
+# - pynini 2.1.5 has manylinux wheels on PyPI — no conda needed
+# - setuptools<72 keeps pkg_resources for old-style setup.py packages
+RUN pip install --no-cache-dir "setuptools<72" \
+    && pip install --no-cache-dir numpy==1.26.4 pynini==2.1.5 \
+    && pip install --no-cache-dir --no-build-isolation -r requirements_inference.txt
+
 ENV COSYVOICE_MODEL_DIR=/app/pretrained_models/CosyVoice2-0.5B
 ENV HF_MODEL_ID=FunAudioLLM/CosyVoice2-0.5B
 ENV USE_VLLM=0
