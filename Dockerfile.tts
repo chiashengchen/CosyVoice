@@ -1,78 +1,72 @@
-# CosyVoice2 TTS streaming server
-# Serves POST /tts/stream → raw 16-bit PCM mono (visualllm pipeline contract)
+# CosyVoice2 TTS streaming server — minimal inference image
+#
+# Multi-stage build:
+#   builder  — compiles C extensions (pyworld, pynini)
+#   runtime  — only inference deps, no build tools / conda / training libs
 #
 # Weights are NOT baked in — downloaded from HuggingFace at first startup.
-# Mount a volume at /app/pretrained_models to cache across restarts:
-#   -v cosyvoice-weights:/app/pretrained_models
-#
-# Build:
-#   docker build -f Dockerfile.tts -t cosyvoice-tts .
-#
-# Run (GPU required):
-#   docker run --gpus all -p 8001:8001 \
-#     -v cosyvoice-weights:/app/pretrained_models \
-#     cosyvoice-tts
+# Mount a volume at /app/pretrained_models to cache across restarts.
 
-FROM nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
+# ── Stage 1: builder ──────────────────────────────────────────────────────────
+FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04 AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.10 python3.10-dev python3-pip python3.10-venv \
+    git curl wget ffmpeg sox libsox-dev build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# pynini must come from conda-forge (no pip wheel); install just the .so files
+RUN wget -q https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh -O /tmp/miniforge.sh \
+    && bash /tmp/miniforge.sh -b -p /opt/conda \
+    && rm /tmp/miniforge.sh \
+    && /opt/conda/bin/conda install -y python=3.10 "setuptools<72" -c conda-forge \
+    && /opt/conda/bin/conda install -y -c conda-forge pynini==2.1.5 \
+    && /opt/conda/bin/conda clean -afy
+
+ENV PATH=/opt/conda/bin:$PATH
+
+WORKDIR /app
+COPY . .
+
+# Install Matcha-TTS from pinned submodule commit
+RUN pip install --no-cache-dir \
+    "matcha-tts @ git+https://github.com/shivammehta25/Matcha-TTS.git@dd9105b34bf2be2230f4aa1e4769fb586a3c824e"
+
+# Install inference deps; pyworld needs numpy first (imports it in setup.py)
+RUN pip install --no-cache-dir numpy==1.26.4 \
+    && pip install --no-cache-dir --no-build-isolation -r requirements_inference.txt
+
+
+# ── Stage 2: runtime ──────────────────────────────────────────────────────────
+FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV LANG=C.UTF-8
 
-# System deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git git-lfs curl wget ffmpeg sox libsox-dev build-essential \
-    && git lfs install \
+    python3.10 python3-pip ffmpeg sox curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Miniforge (conda)
-RUN wget -q https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh -O /tmp/miniforge.sh \
-    && bash /tmp/miniforge.sh -b -p /opt/conda \
-    && rm /tmp/miniforge.sh
+# Copy conda env (for pynini .so) and pip packages from builder
+COPY --from=builder /opt/conda /opt/conda
 ENV PATH=/opt/conda/bin:$PATH
-
-# Create cosyvoice env: python 3.10 + setuptools<72 (keeps pkg_resources) + pynini
-RUN conda create -y -n cosyvoice python=3.10 "setuptools<72" pip wheel -c conda-forge \
-    && conda install -y -n cosyvoice -c conda-forge pynini==2.1.5 \
-    && conda clean -afy
-ENV PATH=/opt/conda/envs/cosyvoice/bin:$PATH
-ENV CONDA_DEFAULT_ENV=cosyvoice
 
 WORKDIR /app
 
-# Copy repo source (weights excluded via .dockerignore)
-# NOTE: Matcha-TTS submodule must be initialized on the host before building:
-#   git submodule update --init third_party/Matcha-TTS
-COPY . .
+# Copy app source
+COPY --from=builder /app /app
 
 ENV PYTHONPATH="/app:/app/third_party/Matcha-TTS"
-
-# Install Python deps
-# - matcha-tts: installed from the pinned submodule commit (submodule files not in Docker context)
-# - skip tensorrt: wheel_stub build backend unavailable; not needed (load_trt=False)
-# - skip vllm pip package: CosyVoice's load_vllm connects to an external vllm server process,
-#   not this package; USE_VLLM=0 uses standard PyTorch inference instead
-# - pre-install numpy: pyworld's setup.py imports it before pip can satisfy the dep
-RUN pip install --no-cache-dir \
-        "matcha-tts @ git+https://github.com/shivammehta25/Matcha-TTS.git@dd9105b34bf2be2230f4aa1e4769fb586a3c824e" \
-    && grep -vE 'tensorrt|^vllm' requirements.txt \
-        | sed 's/transformers==4.51.3/transformers==4.44.2/' \
-        > /tmp/requirements_core.txt \
-    && pip install --no-cache-dir numpy==1.26.4 \
-    && pip install --no-cache-dir --no-build-isolation \
-        -r /tmp/requirements_core.txt \
-        huggingface_hub \
-        librosa
-
-# Weights are downloaded at runtime into this volume
-VOLUME ["/app/pretrained_models"]
-
-EXPOSE 8001
-
 ENV COSYVOICE_MODEL_DIR=/app/pretrained_models/CosyVoice2-0.5B
 ENV HF_MODEL_ID=FunAudioLLM/CosyVoice2-0.5B
-ENV USE_VLLM=1
-ENV COSYVOICE_VLLM_GPU_UTIL=0.5
+ENV USE_VLLM=0
 ENV PORT=8001
+
+VOLUME ["/app/pretrained_models"]
+EXPOSE 8001
 
 CMD ["python", "tts_stream_server.py"]
