@@ -52,7 +52,6 @@ app = FastAPI(title="CosyVoice TTS stream server")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 cosyvoice = None
-prompt_speech_16k = None
 
 
 def _download_weights() -> None:
@@ -67,12 +66,11 @@ def _download_weights() -> None:
 
 
 def _load_model() -> None:
-    global cosyvoice, prompt_speech_16k
+    global cosyvoice
 
     _download_weights()
 
     from cosyvoice.cli.cosyvoice import AutoModel
-    from cosyvoice.utils.file_utils import load_wav
 
     logger.info(f"Loading CosyVoice model (vllm={USE_VLLM}, gpu_util={GPU_UTIL}) ...")
     cosyvoice = AutoModel(
@@ -81,9 +79,6 @@ def _load_model() -> None:
         load_trt=False,
         fp16=True,
     )
-
-    logger.info(f"Loading voice reference: {VOICE_REF}")
-    prompt_speech_16k = load_wav(VOICE_REF, 16000)
     logger.info("Model ready.")
 
 
@@ -110,10 +105,12 @@ async def tts_stream(req: TTSRequest):
     target_sr = req.sample_rate  # pipeline requests 24000
 
     def generate():
+        # Pass the wav file path directly — this CosyVoice version's frontend
+        # internally calls torchaudio.load() on prompt_wav, so it must be a path.
         for chunk in cosyvoice.inference_zero_shot(
             req.text,
             VOICE_TEXT,
-            prompt_speech_16k,
+            VOICE_REF,
             stream=True,
         ):
             audio_np = chunk["tts_speech"].numpy()  # float32, native 24 kHz
