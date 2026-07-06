@@ -72,6 +72,14 @@ def _load_model() -> None:
 
     from cosyvoice.cli.cosyvoice import AutoModel
 
+    if USE_VLLM:
+        # vLLM only knows the custom model class after explicit registration
+        # (see upstream vllm_example.py) — without this, engine init fails with
+        # "'CosyVoice2ForCausalLM' is not a registered model".
+        from vllm import ModelRegistry
+        from cosyvoice.vllm.cosyvoice2 import CosyVoice2ForCausalLM
+        ModelRegistry.register_model("CosyVoice2ForCausalLM", CosyVoice2ForCausalLM)
+
     logger.info(f"Loading CosyVoice model (vllm={USE_VLLM}, gpu_util={GPU_UTIL}) ...")
     cosyvoice = AutoModel(
         model_dir=MODEL_DIR,
