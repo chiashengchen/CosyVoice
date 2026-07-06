@@ -281,10 +281,14 @@ class CosyVoice2Model(CosyVoiceModel):
     def load_vllm(self, model_dir):
         export_cosyvoice2_vllm(self.llm, model_dir, self.device)
         from vllm import EngineArgs, LLMEngine
+        # gpu_memory_utilization must exceed vllm's own footprint or engine init
+        # crashes with "No available memory for the cache blocks"; hardcoded 0.2
+        # (=3GB on a 16GB card) is too low. Tune via env per-GPU.
+        gpu_util = float(os.getenv('COSYVOICE_VLLM_GPU_UTIL', '0.3'))
         engine_args = EngineArgs(model=model_dir,
                                  skip_tokenizer_init=True,
                                  enable_prompt_embeds=True,
-                                 gpu_memory_utilization=0.2)
+                                 gpu_memory_utilization=gpu_util)
         self.llm.vllm = LLMEngine.from_engine_args(engine_args)
         self.llm.lock = threading.Lock()
         del self.llm.llm.model.model.layers
