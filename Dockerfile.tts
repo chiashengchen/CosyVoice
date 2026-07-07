@@ -40,6 +40,16 @@ RUN pip install --no-cache-dir "setuptools<72" \
     && pip install --no-cache-dir --no-deps openai-whisper==20231117 \
        ffmpeg-python tiktoken more-itertools
 
+# vLLM stack (USE_VLLM=1 runtime toggle). Recipe from the T4 trial, now targeting
+# L4 (Ada, CC 8.9): V1 engine + FlashAttention-2 + bf16 — none of the T4 fallbacks.
+# vllm pulls torch 2.7 + numpy 2, which breaks three numpy1-ABI packages:
+# onnxruntime (upgrade), pyarrow (upgrade), pyworld (rebuild from source).
+# transformers must stay <4.54 or vllm 0.9.2's aimv2 registration collides.
+RUN pip install --no-cache-dir "vllm==0.9.2" "transformers==4.51.3" \
+    && pip install --no-cache-dir -U "onnxruntime-gpu==1.20.1" pyarrow cython \
+    && pip install --no-cache-dir --force-reinstall --no-build-isolation \
+       --no-binary pyworld pyworld==0.3.4
+
 ENV COSYVOICE_MODEL_DIR=/app/pretrained_models/CosyVoice2-0.5B
 ENV HF_MODEL_ID=FunAudioLLM/CosyVoice2-0.5B
 ENV USE_VLLM=0

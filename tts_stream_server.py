@@ -87,6 +87,12 @@ def _load_model() -> None:
         load_trt=False,
         fp16=True,
     )
+
+    # Warmup: the first real synthesis after boot pays cuDNN autotune + cold
+    # caches (~10s TTFB observed). Burn that here so the first user doesn't.
+    logger.info("Warmup synthesis ...")
+    for _ in cosyvoice.inference_zero_shot("你好", VOICE_TEXT, VOICE_REF, stream=True):
+        pass
     logger.info("Model ready.")
 
 
