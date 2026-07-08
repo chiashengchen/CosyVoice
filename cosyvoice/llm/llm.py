@@ -505,10 +505,25 @@ class Qwen2LM(TransformerLM):
     def inference_wrapper(self, lm_input, sampling, min_len, max_len, uuid):
         if hasattr(self, 'vllm'):
             from vllm import SamplingParams, RequestOutput
+            from cosyvoice.utils.common import ras_sampling
+
+            def ras_processor(token_ids, logits):
+                # Faithful RAS: vLLM's built-in sampler has no repetition-aware
+                # resampling, so speech tokens loop (dragged/garbled audio, ~35%
+                # longer output). Run the original ras_sampling on the raw logits
+                # and force its pick by masking everything else, making vLLM's
+                # sampler deterministic on our choice.
+                # clone: ras_sampling mutates its input (bans the repeated id)
+                top_ids = ras_sampling(logits.float().clone(), list(token_ids), sampling)
+                forced = torch.full_like(logits, float('-inf'))
+                forced[top_ids] = 0
+                return forced
+
             sampling_params = SamplingParams(top_k=sampling,
                                              stop_token_ids=self.stop_token_ids,
                                              min_tokens=min_len,
-                                             max_tokens=max_len)
+                                             max_tokens=max_len,
+                                             logits_processors=[ras_processor])
             with self.lock:
                 self.vllm.add_request(uuid, {"prompt_embeds": lm_input.squeeze(0).to(torch.bfloat16).to(lm_input.device)}, sampling_params)
                 self.vllm_output_queue[uuid] = queue.Queue()
