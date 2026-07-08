@@ -22,9 +22,11 @@ RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1 \
     && update-alternatives --install /usr/bin/pip pip /usr/bin/pip3 1
 
 WORKDIR /app
-COPY . .
 
 ENV PYTHONPATH="/app:/app/third_party/Matcha-TTS"
+
+# ── Dependency layers FIRST (only requirements_inference.txt invalidates them).
+# Source code is copied LAST so a code change rebuilds in seconds, not ~40 min.
 
 # Install Matcha-TTS from pinned submodule commit (provides 'matcha' package)
 RUN pip install --no-cache-dir \
@@ -34,6 +36,7 @@ RUN pip install --no-cache-dir \
 # - numpy first: pyworld's setup.py imports it during metadata generation
 # - pynini 2.1.5 has manylinux wheels on PyPI — no conda needed
 # - setuptools<72 keeps pkg_resources for old-style setup.py packages
+COPY requirements_inference.txt .
 RUN pip install --no-cache-dir "setuptools<72" \
     && pip install --no-cache-dir numpy==1.26.4 pynini==2.1.5 \
     && pip install --no-cache-dir --no-build-isolation -r requirements_inference.txt \
@@ -41,14 +44,16 @@ RUN pip install --no-cache-dir "setuptools<72" \
        ffmpeg-python tiktoken more-itertools
 
 # vLLM stack (USE_VLLM=1 runtime toggle). Recipe from the T4 trial, now targeting
-# L4 (Ada, CC 8.9): V1 engine + FlashAttention-2 + bf16 — none of the T4 fallbacks.
-# vllm pulls torch 2.7 + numpy 2, which breaks three numpy1-ABI packages:
-# onnxruntime (upgrade), pyarrow (upgrade), pyworld (rebuild from source).
+# L4 (Ada, CC 8.9). vllm pulls torch 2.7 + numpy 2, which breaks three numpy1-ABI
+# packages: onnxruntime (upgrade), pyarrow (upgrade), pyworld (rebuild from source).
 # transformers must stay <4.54 or vllm 0.9.2's aimv2 registration collides.
 RUN pip install --no-cache-dir "vllm==0.9.2" "transformers==4.51.3" \
     && pip install --no-cache-dir -U "onnxruntime-gpu==1.20.1" pyarrow cython \
     && pip install --no-cache-dir --force-reinstall --no-build-isolation \
        --no-binary pyworld pyworld==0.3.4
+
+# ── Source code last: changing it only re-runs this cheap layer.
+COPY . .
 
 ENV COSYVOICE_MODEL_DIR=/app/pretrained_models/CosyVoice2-0.5B
 ENV HF_MODEL_ID=FunAudioLLM/CosyVoice2-0.5B
