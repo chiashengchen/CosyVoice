@@ -53,6 +53,18 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 
 cosyvoice = None
 
+# Traditional->Simplified before synthesis: the text frontend garbles long
+# Traditional-Chinese input (spoken output degrades into noise after ~10 chars;
+# Simplified is flawless — A/B verified 2026-07-10). Spoken Mandarin is identical
+# either way, so the conversion is inaudible. COSYVOICE_T2S=0 disables.
+_T2S = None
+if os.getenv("COSYVOICE_T2S", "1").lower() in ("1", "true"):
+    try:
+        from opencc import OpenCC
+        _T2S = OpenCC("t2s")
+    except Exception as e:  # noqa: BLE001 — missing opencc = keep old behavior
+        logger.warning(f"OpenCC unavailable, Traditional input will NOT be converted: {e!r}")
+
 
 def _download_weights() -> None:
     model_path = Path(MODEL_DIR)
@@ -117,12 +129,13 @@ async def tts_stream(req: TTSRequest):
         raise HTTPException(503, "Model not loaded yet")
 
     target_sr = req.sample_rate  # pipeline requests 24000
+    text = _T2S.convert(req.text) if _T2S else req.text
 
     def generate():
         # Pass the wav file path directly — this CosyVoice version's frontend
         # internally calls torchaudio.load() on prompt_wav, so it must be a path.
         for chunk in cosyvoice.inference_zero_shot(
-            req.text,
+            text,
             VOICE_TEXT,
             VOICE_REF,
             stream=True,

@@ -52,6 +52,11 @@ RUN pip install --no-cache-dir "vllm==0.9.2" "transformers==4.51.3" \
     && pip install --no-cache-dir --force-reinstall --no-build-isolation \
        --no-binary pyworld pyworld==0.3.4
 
+# opencc: Traditional->Simplified conversion before synthesis (the frontend
+# garbles long Traditional zh). Separate cheap layer to keep the big pip
+# layers' cache intact.
+RUN pip install --no-cache-dir opencc-python-reimplemented
+
 # ── Source code last: changing it only re-runs this cheap layer.
 COPY . .
 
